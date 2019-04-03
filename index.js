@@ -1,4 +1,5 @@
 const nunjucks = require("nunjucks");
+nunjucks.configure({ autoescape: true });
 
 const countVertices = inputGraph => {
   return inputGraph.length;
@@ -83,7 +84,10 @@ const stages = (levels, input) => {
   return stages;
 };
 
-const findNodeByUUID = (input, uuid) => input.filter(node => node.id == uuid);
+const findNodeByUUID = (input, uuid) => {
+  let node = input.filter(node => node.id == uuid);
+  return node[0];
+};
 
 const createTemplatizedSqlOutput = (input, stages) => {
   // Refactor this method with string interpolation
@@ -116,18 +120,18 @@ const createTemplatizedSqlOutput = (input, stages) => {
       };
 
       const node = findNodeByUUID(input, stages[stage][j]);
-      const inputSource = findNodeByUUID(input, node[0].inputs[0])[0].attrs[
-        "table_name"
-      ];
-      const condition = node[0].attrs["Condition"];
-      const sql =
-        sqlTemp["filter"][0].split("$").join(inputSource) +
-        " " +
-        sqlTemp["filter"][1].split("$").join(condition);
+      // const inputSource = findNodeByUUID(input, node.inputs[0]).attrs[
+      //   "table_name"
+      // ];
+      // const condition = node.attrs["Condition"];
+      // const sql =
+      //   sqlTemp["filter"][0].split("$").join(inputSource) +
+      //   " " +
+      //   sqlTemp["filter"][1].split("$").join(condition);
+      // task.sql = sql;
 
-      task.sql = sql;
-      // Call SQL template method here
-      // task.sql = sqlTemplate(typeoffilter..node[0].type)
+      task.sql = sqlTemplate(input, node);
+
       output.stages[i].tasks[j] = task;
     }
     i++;
@@ -135,15 +139,30 @@ const createTemplatizedSqlOutput = (input, stages) => {
   return output;
 };
 
-const sqlTemplate = () => {
+const sqlTemplate = (input, node) => {
+  let template = "";
   const sqlTemp = {
-    filter: ["Select * from $", "where $"]
+    FILTER: "Select * from {{inputSource}} where {{condition}}",
+    JOIN: ""
   };
-  // switch statement here to form sql based in sql operation type
-  // do the string interpolation here
 
-  nunjucks.configure({ autoescape: true });
-  nunjucks.renderString("Hello {{ username }}", { username: "James" });
+  // For single input operations not for Joins
+  const inputSource = findNodeByUUID(input, node.inputs[0]).attrs["table_name"];
+
+  const condition = node.attrs["Condition"];
+
+  switch (node.type) {
+    case "FILTER":
+      template = sqlTemp[node.type];
+      break;
+  }
+
+  const sql = nunjucks.renderString(template, {
+    inputSource,
+    condition
+  });
+
+  return sql;
 };
 
 const init = input => {
@@ -157,10 +176,11 @@ const init = input => {
   const graph = createAdjacencyList(pairs);
   const levels = bfs(graph, vertices, uuids);
   const stageCollection = stages(levels, input);
-  // const output = createTemplatizedSqlOutput(input, stageCollection);
+  const output = createTemplatizedSqlOutput(input, stageCollection);
   // console.log(JSON.stringify(uuids));
   // console.log(Math.max(2, 3));
   console.log(stageCollection);
+  console.log(JSON.stringify(output));
 
   // TODO
   // Incorporate multiple inputs
@@ -242,7 +262,7 @@ var input = [
   {
     id: "3",
     type: "OUTPUT",
-    attrs: [],
+    attrs: {},
     inputs: [2]
   }
 ];
