@@ -2,12 +2,10 @@ const nunjucks = require("nunjucks");
 nunjucks.configure({ autoescape: true });
 
 const countVertices = inputGraph => {
-  return inputGraph.length;
+  return Object.keys(inputGraph).length;
 };
 
 const createAdjacencyList = pairs => {
-  // Create 2D array
-  //convert the index of array to be uuid
   let graph = [];
   for (let i = 0; i < pairs.length; i++) {
     if (graph[pairs[i][0]] == undefined) {
@@ -30,19 +28,18 @@ const bfs = (graph, V, uuids) => {
   });
 
   while (queue.length != 0) {
-    x = queue.shift();
+    let x = queue.shift();
     if (graph[x]) {
       for (let i = 0; i < graph[x].length; i++) {
         let next = graph[x][i];
+        let prev = level[next];
+        level[next] = level[x] + 1;
         if (marked[next]) {
-          prev = level[next];
-          level[next] = level[x] + 1;
           level[next] = Math.max(level[next], prev);
         } else {
-          queue.unshift(next);
-          level[next] = level[x] + 1;
           marked[next] = true;
         }
+        queue.unshift(next);
       }
     }
   }
@@ -51,23 +48,24 @@ const bfs = (graph, V, uuids) => {
 
 const calculateDirectedPairs = input => {
   let pairs = [];
-  // TODO change this to simple for loop
-  input.map(node => {
-    if (node.inputs.length > 0) {
-      for (let i = 0; i < node.inputs.length; i++) {
-        pairs.push([node.inputs[i], node.id]);
+
+  for (const node in input) {
+    let value = input[node];
+    if (value.inputs.length > 0) {
+      for (let i = 0; i < value.inputs.length; i++) {
+        pairs.push([value.inputs[i], node]);
       }
     }
-  });
+  }
   return pairs;
 };
 
-const stages = (levels, input) => {
+const stages = (levels, filterUuids) => {
   // Create a stages array 2D with tasks based on levels calculcated with custom BFS
   let stages = {};
   let prevDepth = null;
-  const operations = input.filter(node => node.type == "FILTER");
-  const uuids = operations.map(node => node.id);
+
+  const uuids = filterUuids;
   for (const key in levels) {
     let uuid = key;
     let depth = levels[key];
@@ -90,8 +88,6 @@ const findNodeByUUID = (input, uuid) => {
 };
 
 const createTemplatizedSqlOutput = (input, stages) => {
-  // Refactor this method with string interpolation
-  // make sql_template a separate function and creation of JSON as a separate func
   let output = {};
   let i = 0;
 
@@ -99,10 +95,6 @@ const createTemplatizedSqlOutput = (input, stages) => {
   output.name = "Demo Pipeline";
   output.spaceId = "f332d24c-4eb4-40a4-9987-1a04bc315943";
   output.stages = [];
-
-  const sqlTemp = {
-    filter: ["Select * from $", "where $"]
-  };
 
   for (const stage in stages) {
     output.stages[i] = {};
@@ -120,15 +112,6 @@ const createTemplatizedSqlOutput = (input, stages) => {
       };
 
       const node = findNodeByUUID(input, stages[stage][j]);
-      // const inputSource = findNodeByUUID(input, node.inputs[0]).attrs[
-      //   "table_name"
-      // ];
-      // const condition = node.attrs["Condition"];
-      // const sql =
-      //   sqlTemp["filter"][0].split("$").join(inputSource) +
-      //   " " +
-      //   sqlTemp["filter"][1].split("$").join(condition);
-      // task.sql = sql;
 
       task.sql = sqlTemplate(input, node);
 
@@ -142,14 +125,13 @@ const createTemplatizedSqlOutput = (input, stages) => {
 const sqlTemplate = (input, node) => {
   let template = "";
   const sqlTemp = {
-    FILTER: "Select * from {{inputSource}} where {{condition}}",
-    JOIN: ""
+    FILTER: "Select * from {{inputs | first}} where {{attrs.Condition}}",
+    CAST: ""
   };
 
-  // For single input operations not for Joins
-  const inputSource = findNodeByUUID(input, node.inputs[0]).attrs["table_name"];
+  const inputs = node.inputs;
 
-  const condition = node.attrs["Condition"];
+  const attrs = node.attrs;
 
   switch (node.type) {
     case "FILTER":
@@ -158,8 +140,8 @@ const sqlTemplate = (input, node) => {
   }
 
   const sql = nunjucks.renderString(template, {
-    inputSource,
-    condition
+    inputs,
+    attrs
   });
 
   return sql;
@@ -169,18 +151,24 @@ const init = input => {
   //TODO
   // Convert graph in bfs to a hash object
   const vertices = countVertices(input);
-  const totalInputs = input.filter(node => node.type == "INPUT");
-  const uuid = totalInputs[0].id;
-  const uuids = totalInputs.map(input => input.id);
+  // const totalInputs = input.filter(node => node.type == "INPUT");
+  const inputUuids = Object.keys(input).filter(
+    uuid => input[uuid].type == "INPUT"
+  );
+
+  const filterUuids = Object.keys(input).filter(
+    uuid => input[uuid].type == "FILTER"
+  );
+  // const uuids = totalInputs.map(input => input.id);
   const pairs = calculateDirectedPairs(input);
   const graph = createAdjacencyList(pairs);
-  const levels = bfs(graph, vertices, uuids);
-  const stageCollection = stages(levels, input);
-  const output = createTemplatizedSqlOutput(input, stageCollection);
+  const levels = bfs(graph, vertices, inputUuids);
+  const stageCollection = stages(levels, filterUuids);
+  // const output = createTemplatizedSqlOutput(input, stageCollection);
+  // console.log(stageCollection);
   // console.log(JSON.stringify(uuids));
-  // console.log(Math.max(2, 3));
   console.log(stageCollection);
-  console.log(JSON.stringify(output));
+  // console.log(JSON.stringify(output));
 
   // TODO
   // Incorporate multiple inputs
@@ -244,11 +232,9 @@ var originalInput = [
 
 var input = [
   {
-    id: "1",
+    id: "Cars",
     type: "INPUT",
-    attrs: {
-      table_name: "Cars"
-    },
+    attrs: {},
     inputs: []
   },
   {
@@ -257,7 +243,7 @@ var input = [
     attrs: {
       Condition: "make = Chevrolet"
     },
-    inputs: [1]
+    inputs: ["Cars"]
   },
   {
     id: "3",
@@ -267,32 +253,111 @@ var input = [
   }
 ];
 
-// var originalInput3 = [
-//   {
-//     id: 1,
-//     type: "INPUT",
-//     inputs: [],
-//     attrs: [
-//       {
-//         table_name: "Cars"
-//       }
-//     ]
-//   },
-//   {
-//     id: 2,
-//     type: "FILTER",
-//     inputs: [1],
-//     attrs: [
-//       {
-//         condition: "make = Chevrolet"
-//       }
-//     ]
-//   },
-//   {
-//     id: 3,
-//     type: "OUTPUT",
-//     inputs: [2]
-//   }
-// ];
+var input3 = [
+  {
+    id: "42f01268-de1a-41fb-841a-218b503dceee",
+    type: "INPUT",
+    inputs: [],
+    attrs: {
+      table_name: "Cars"
+    }
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984055f",
+    type: "FILTER",
+    inputs: ["42f01268-de1a-41fb-841a-218b503dceee"],
+    attrs: {
+      Condition: "make = Chevrolet"
+    }
+  },
+  {
+    id: "4619ddd8-f7c8-4020-8659-4a6ec2a2413b",
+    type: "OUTPUT",
+    inputs: ["996db6fc-395b-46d5-85e1-54ab0984055f"]
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984056g",
+    type: "FILTER",
+    inputs: ["42f01268-de1a-41fb-841a-218b503dceee"],
+    attrs: {
+      Condition: "make = Suzuki"
+    }
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984056t",
+    type: "OUTPUT",
+    inputs: ["996db6fc-395b-46d5-85e1-54ab0984056g"]
+  }
+];
 
-init(input);
+var payload = [
+  {
+    id: "42f01268-de1a-41fb-841a-218b503dceee",
+    type: "INPUT",
+    inputs: [],
+    attrs: {
+      table_name: "Cars"
+    }
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984055f",
+    type: "FILTER",
+    inputs: ["42f01268-de1a-41fb-841a-218b503dceee"],
+    attrs: {
+      Condition: "make = Chevrolet"
+    }
+  },
+  {
+    id: "4619ddd8-f7c8-4020-8659-4a6ec2a2413b",
+    type: "OUTPUT",
+    inputs: ["996db6fc-395b-46d5-85e1-54ab0984055f"]
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984056g",
+    type: "FILTER",
+    inputs: ["42f01268-de1a-41fb-841a-218b503dceee"],
+    attrs: {
+      Condition: "make = Suzuki"
+    }
+  },
+  {
+    id: "996db6fc-395b-46d5-85e1-54ab0984056t",
+    type: "OUTPUT",
+    inputs: ["996db6fc-395b-46d5-85e1-54ab0984056g"]
+  }
+];
+
+var revisedInput = {
+  "a32f4c87-ae80-4296-a0b6-1551e0d3c741": {
+    type: "INPUT",
+    attrs: {
+      table_name: "Cars"
+    },
+    inputs: []
+  },
+  "063b7040-d502-45d5-9bdf-49af2420095a": {
+    type: "OUTPUT",
+    attrs: {
+      Result: "Output store"
+    },
+    inputs: ["9b80bd77-e446-417c-b1db-b0db6c6732c8"]
+  },
+  "f091f096-0ca8-4e6f-b6da-7e30e4dfe1ea": {
+    type: "FILTER",
+    attrs: {
+      Condition: "make = Dodge",
+      table_name: "Cars"
+    },
+    inputs: ["a32f4c87-ae80-4296-a0b6-1551e0d3c741"]
+  },
+  "9b80bd77-e446-417c-b1db-b0db6c6732c8": {
+    type: "FILTER",
+    attrs: {
+      Condition: "make = Honda",
+      table_name: "Cars"
+    },
+    inputs: ["f091f096-0ca8-4e6f-b6da-7e30e4dfe1ea"]
+  }
+};
+
+init(revisedInput);
