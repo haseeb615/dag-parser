@@ -148,10 +148,7 @@ const sqlTemplate = (input, node) => {
 };
 
 const init = input => {
-  //TODO
-  // Convert graph in bfs to a hash object
   const vertices = countVertices(input);
-  // const totalInputs = input.filter(node => node.type == "INPUT");
   const inputUuids = Object.keys(input).filter(
     uuid => input[uuid].type == "INPUT"
   );
@@ -159,21 +156,12 @@ const init = input => {
   const filterUuids = Object.keys(input).filter(
     uuid => input[uuid].type == "FILTER"
   );
-  // const uuids = totalInputs.map(input => input.id);
   const pairs = calculateDirectedPairs(input);
   const graph = createAdjacencyList(pairs);
   const levels = bfs(graph, vertices, inputUuids);
   const stageCollection = stages(levels, filterUuids);
   // const output = createTemplatizedSqlOutput(input, stageCollection);
-  // console.log(stageCollection);
-  // console.log(JSON.stringify(uuids));
   console.log(stageCollection);
-  // console.log(JSON.stringify(output));
-
-  // TODO
-  // Incorporate multiple inputs
-  // calculate maximum depth
-  // Add Join of two tables for start later move it to 3.
   // console.log(JSON.stringify(output));
 };
 
